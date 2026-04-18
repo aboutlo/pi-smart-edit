@@ -2,16 +2,15 @@
  * pi-extension-smart-edit
  *
  * Overrides the built-in `edit` tool with a smarter version that tolerates
- * whitespace/indentation differences. Ideal for local LLMs that can't
- * reproduce exact whitespace.
+ * quote and whitespace mismatches. Ideal for local LLMs that can struggle
+ * to reproduce exact formatting.
  *
- * Matching strategy:
- * 1. Exact match (same as built-in)
- * 2. Whitespace-normalized match (strips leading/trailing whitespace per line)
- * 3. Prettier-normalized match (format file, then match)
+ * Matching strategy is implemented in `smart-match.ts`:
+ * 1. Exact match (fast path)
+ * 2. Normalized line match (quote/whitespace tolerant)
  *
- * After a fuzzy replacement, prettier is run on the result to ensure
- * consistent formatting.
+ * Replacements are applied to the original content (not normalized text),
+ * preserving file formatting outside the edited ranges.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
