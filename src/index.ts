@@ -20,7 +20,7 @@ import { Type } from "@sinclair/typebox";
 import { constants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { smartEdit } from "./smart-match.ts";
+import { smartEditMany, type SmartEditBlock } from "./smart-match.ts";
 
 // Replicate the edit-diff utilities we need (they're not all exported)
 function detectLineEnding(content: string): string {
@@ -53,14 +53,22 @@ function simpleDiff(oldContent: string, newContent: string): string {
 
   // Find first different line
   let start = 0;
-  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
+  while (
+    start < oldLines.length &&
+    start < newLines.length &&
+    oldLines[start] === newLines[start]
+  ) {
     start++;
   }
 
   // Find last different line
   let oldEnd = oldLines.length - 1;
   let newEnd = newLines.length - 1;
-  while (oldEnd > start && newEnd > start && oldLines[oldEnd] === newLines[newEnd]) {
+  while (
+    oldEnd > start &&
+    newEnd > start &&
+    oldLines[oldEnd] === newLines[newEnd]
+  ) {
     oldEnd--;
     newEnd--;
   }
@@ -91,21 +99,64 @@ function simpleDiff(oldContent: string, newContent: string): string {
 }
 
 const editSchema = Type.Object({
-  path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
-  oldText: Type.String({ description: "Exact text to find and replace (must match exactly)" }),
-  newText: Type.String({ description: "New text to replace the old text with" }),
+  path: Type.String({
+    description: "Path to the file to edit (relative or absolute)",
+  }),
+  edits: Type.Array(
+    Type.Object({
+      oldText: Type.String({
+        description: "Exact text for one targeted replacement",
+      }),
+      newText: Type.String({ description: "Replacement text for this edit" }),
+    }),
+    { description: "One or more targeted replacements" },
+  ),
 });
+
+export function prepareEditArguments(args: unknown): {
+  path: string;
+  edits: SmartEditBlock[];
+} {
+  if (!args || typeof args !== "object")
+    return args as { path: string; edits: SmartEditBlock[] };
+
+  const input = args as {
+    path?: string;
+    edits?: SmartEditBlock[];
+    oldText?: unknown;
+    newText?: unknown;
+  };
+
+  if (typeof input.oldText !== "string" || typeof input.newText !== "string") {
+    return args as { path: string; edits: SmartEditBlock[] };
+  }
+
+  return {
+    ...input,
+    edits: [
+      ...(input.edits ?? []),
+      { oldText: input.oldText, newText: input.newText },
+    ],
+  } as { path: string; edits: SmartEditBlock[] };
+}
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "edit",
     label: "Smart Edit",
     description:
-      "Edit a file by replacing text (smart-edit: tolerates minor whitespace/indentation differences). Provide oldText as close to the original as possible; the tool will match even if indentation is slightly off.",
+      "Edit a single file with smart matching. Supports one or more targeted replacements in edits[].",
+    promptSnippet:
+      "Make precise file edits with smart matching (whitespace/quote tolerant), including multiple disjoint edits in one call",
+    promptGuidelines: [
+      "Use this tool for precise text replacements in one file.",
+      "Prefer one edit call with multiple entries in edits[] when changing multiple locations in the same file.",
+      "Keep edits[].oldText as small as possible while still unique.",
+    ],
     parameters: editSchema,
+    prepareArguments: prepareEditArguments,
 
-    async execute(_toolCallId, { path, oldText, newText }, signal, _onUpdate, ctx) {
-      // Strip leading @ (some models add it)
+    async execute(_toolCallId, { path, edits }, signal, _onUpdate, ctx) {
       const cleanPath = path.startsWith("@") ? path.slice(1) : path;
       const absolutePath = resolve(ctx.cwd, cleanPath);
 
@@ -128,22 +179,20 @@ export default function (pi: ExtensionAPI) {
         const { bom, text: content } = stripBom(rawContent);
         const originalEnding = detectLineEnding(content);
         const normalizedContent = normalizeToLF(content);
-        const normalizedOldText = normalizeToLF(oldText);
-        const normalizedNewText = normalizeToLF(newText);
-
+        const normalizedEdits = edits.map((edit) => ({
+          oldText: normalizeToLF(edit.oldText),
+          newText: normalizeToLF(edit.newText),
+        }));
         if (signal?.aborted) throw new Error("Operation aborted");
 
-        // Smart edit: tries exact → quote/whitespace-normalized (line-based)
-        const result = smartEdit(
-          normalizedContent,
-          normalizedOldText,
-          normalizedNewText
-        );
+        // Smart edit: exact -> quote/whitespace-normalized (line-based)
+        const result = smartEditMany(normalizedContent, normalizedEdits);
 
         if (signal?.aborted) throw new Error("Operation aborted");
 
         // Write result
-        const finalContent = bom + restoreLineEndings(result.newContent, originalEnding);
+        const finalContent =
+          bom + restoreLineEndings(result.newContent, originalEnding);
         await writeFile(absolutePath, finalContent, "utf-8");
 
         // Generate diff for display
@@ -153,21 +202,23 @@ export default function (pi: ExtensionAPI) {
           .find((l) => l.startsWith("+"))
           ?.match(/^\+(\d+)/)?.[1];
 
-        const matchInfo =
-          result.matchType === "exact"
-            ? ""
-            : ` (matched via ${result.matchType})`;
+        const allExact = result.matchTypes.every((m) => m === "exact");
+        const matchInfo = allExact
+          ? ""
+          : ` (matched via ${Array.from(new Set(result.matchTypes)).join(", ")})`;
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Successfully replaced text in ${path}.${matchInfo}`,
+              text: `Successfully replaced ${normalizedEdits.length} block(s) in ${path}.${matchInfo}`,
             },
           ],
           details: {
             diff,
-            firstChangedLine: firstChangedLine ? parseInt(firstChangedLine) : undefined,
+            firstChangedLine: firstChangedLine
+              ? parseInt(firstChangedLine)
+              : undefined,
           },
         };
       });

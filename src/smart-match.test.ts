@@ -5,6 +5,7 @@ import {
   normalizeLines,
   smartFindText,
   smartEdit,
+  smartEditMany,
   findBestLineAlignment,
 } from "./smart-match.ts";
 
@@ -17,11 +18,17 @@ describe("normalizeLine", () => {
   });
 
   it("canonicalizes single quotes to double quotes", () => {
-    assert.equal(normalizeLine("import { x } from 'viem';"), 'import { x } from "viem";');
+    assert.equal(
+      normalizeLine("import { x } from 'viem';"),
+      'import { x } from "viem";',
+    );
   });
 
   it("handles mixed quotes", () => {
-    assert.equal(normalizeLine(`const s = 'it\\'s a "test"';`), `const s = "it\\"s a "test"";`);
+    assert.equal(
+      normalizeLine(`const s = 'it\\'s a "test"';`),
+      `const s = "it\\"s a "test"";`,
+    );
   });
 
   it("preserves empty lines as empty strings", () => {
@@ -34,8 +41,14 @@ describe("normalizeLine", () => {
   });
 
   it("normalizes smart/curly quotes to double quotes", () => {
-    assert.equal(normalizeLine('import x from \u201Cviem\u201D;'), 'import x from "viem";');
-    assert.equal(normalizeLine('import x from \u2018viem\u2019;'), 'import x from "viem";');
+    assert.equal(
+      normalizeLine("import x from \u201Cviem\u201D;"),
+      'import x from "viem";',
+    );
+    assert.equal(
+      normalizeLine("import x from \u2018viem\u2019;"),
+      'import x from "viem";',
+    );
   });
 
   it("normalizes unicode dashes to ASCII hyphen", () => {
@@ -102,7 +115,8 @@ describe("smartFindText - exact", () => {
 // ---------------------------------------------------------------------------
 describe("smartFindText - normalized", () => {
   it("matches when model sends single quotes but file has double", () => {
-    const content = 'import { formatUnits } from "viem";\nimport type { PublicClient } from "viem";';
+    const content =
+      'import { formatUnits } from "viem";\nimport type { PublicClient } from "viem";';
     const oldText = "import { formatUnits } from 'viem';";
     const result = smartFindText(content, oldText);
     assert.ok(result.found);
@@ -141,10 +155,10 @@ describe("smartFindText - normalized", () => {
 
   it("matches when both quotes AND indent are wrong", () => {
     const content = [
-      'const config = {',
+      "const config = {",
       '  host: "localhost",',
-      '  port: 3000,',
-      '};',
+      "  port: 3000,",
+      "};",
     ].join("\n");
     const oldText = "    host: 'localhost',"; // wrong quotes + wrong indent
     const result = smartFindText(content, oldText);
@@ -216,7 +230,7 @@ describe("smartEdit", () => {
       "}",
     ].join("\n");
     const oldText = [
-      "     getValue() {",         // 5 instead of 4
+      "     getValue() {", // 5 instead of 4
       "         return this.value;", // 9 instead of 8
       "     }",
     ].join("\n");
@@ -263,7 +277,7 @@ describe("smartEdit", () => {
     // Another real pattern: deepEqual with wrong quotes
     const content = [
       "    assert.deepEqual(",
-      '      calls.map((call) => call.functionName),',
+      "      calls.map((call) => call.functionName),",
       '      ["balanceOf", "balanceOf", "getAmountsOut"],',
       "    );",
     ].join("\n");
@@ -302,23 +316,23 @@ describe("smartEdit", () => {
       assert.fail("should have thrown");
     } catch (err) {
       const msg = (err as Error).message;
-      assert.ok(msg.includes("Closest match") || msg.includes("Could not find"), msg);
+      assert.ok(
+        msg.includes("Closest match") || msg.includes("Could not find"),
+        msg,
+      );
     }
   });
 
   it("throws on ambiguous matches", () => {
     const content = "  foo();\n  foo();";
-    assert.throws(
-      () => smartEdit(content, "foo();", "bar();"),
-      /occurrences/
-    );
+    assert.throws(() => smartEdit(content, "foo();", "bar();"), /occurrences/);
   });
 
   it("throws when replacement produces identical content", () => {
     const content = "const x = 1;";
     assert.throws(
       () => smartEdit(content, "const x = 1;", "const x = 1;"),
-      /No changes/
+      /No changes/,
     );
   });
 
@@ -360,30 +374,78 @@ describe("smartEdit", () => {
 
   it("handles package.json with stripped indentation", () => {
     const content = [
-      '{',
+      "{",
       '  "name": "test",',
       '  "version": "1.0.0",',
       '  "scripts": {',
       '    "start": "node index.js"',
-      '  }',
-      '}',
+      "  }",
+      "}",
     ].join("\n");
     // Model strips all indentation
-    const oldText = [
-      '"scripts": {',
-      '"start": "node index.js"',
-      '}',
-    ].join("\n");
+    const oldText = ['"scripts": {', '"start": "node index.js"', "}"].join(
+      "\n",
+    );
     const newText = [
       '  "scripts": {',
       '    "start": "node index.js",',
       '    "test": "jest"',
-      '  }',
+      "  }",
     ].join("\n");
 
     const result = smartEdit(content, oldText, newText);
     assert.ok(result.newContent.includes('"test": "jest"'));
     assert.equal(result.matchType, "normalized");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// smartEditMany — multiple edits in one call
+// ---------------------------------------------------------------------------
+describe("smartEditMany", () => {
+  it("applies multiple disjoint edits matched against original content", () => {
+    const content = [
+      'import { x } from "viem";',
+      "",
+      "function a() {",
+      "  return 1;",
+      "}",
+      "",
+      "function b() {",
+      "  return 2;",
+      "}",
+    ].join("\n");
+
+    const result = smartEditMany(content, [
+      {
+        oldText: "import { x } from 'viem';",
+        newText: 'import { x, y } from "viem";',
+      },
+      {
+        oldText: "  return 2;",
+        newText: "  return 22;",
+      },
+    ]);
+
+    assert.ok(result.newContent.includes('import { x, y } from "viem";'));
+    assert.ok(result.newContent.includes("  return 22;"));
+    assert.deepEqual(result.matchTypes, ["normalized", "exact"]);
+  });
+
+  it("throws on overlapping edits", () => {
+    const content = ["a", "b", "c"].join("\n");
+    assert.throws(
+      () =>
+        smartEditMany(content, [
+          { oldText: "a\nb", newText: "x" },
+          { oldText: "b\nc", newText: "y" },
+        ]),
+      /overlap/,
+    );
+  });
+
+  it("throws when edits are empty", () => {
+    assert.throws(() => smartEditMany("a", []), /at least one/);
   });
 });
 
@@ -408,7 +470,7 @@ describe("findBestLineAlignment", () => {
     const oldText = [
       "test('indented', () => {",
       "  equal(parse('           - [x]'), '           - [x]');", // 11 vs 10 spaces
-      "  equal(parse('        [ ]'), '        [ ]');",           // 8 vs 7 spaces
+      "  equal(parse('        [ ]'), '        [ ]');", // 8 vs 7 spaces
       "});",
     ].join("\n");
 
@@ -437,7 +499,9 @@ describe("findBestLineAlignment", () => {
 
     const result = findBestLineAlignment(content, oldText);
     assert.ok(result !== null);
-    const descMismatch = result.mismatches.find(m => m.sent.includes("describe("));
+    const descMismatch = result.mismatches.find((m) =>
+      m.sent.includes("describe("),
+    );
     assert.ok(descMismatch, "should flag hallucinated describe line");
   });
 
@@ -453,7 +517,10 @@ describe("findBestLineAlignment", () => {
   it("caps mismatches to avoid flooding", () => {
     const contentLines = Array.from({ length: 20 }, (_, i) => `line ${i} ok`);
     const oldLines = Array.from({ length: 20 }, (_, i) => `line ${i} bad`);
-    const result = findBestLineAlignment(contentLines.join("\n"), oldLines.join("\n"));
+    const result = findBestLineAlignment(
+      contentLines.join("\n"),
+      oldLines.join("\n"),
+    );
     assert.ok(result !== null);
     assert.ok(result.mismatches.length <= 5);
   });

@@ -67,7 +67,7 @@ export function normalizeLines(text: string): string[] {
  */
 function findAllLineMatches(
   contentNorm: string[],
-  needleNorm: string[]
+  needleNorm: string[],
 ): number[] {
   if (needleNorm.length === 0) return [];
 
@@ -99,7 +99,7 @@ function findAllLineMatches(
  */
 export function smartFindText(
   content: string,
-  oldText: string
+  oldText: string,
 ): { found: false } | { found: true; match: MatchResult } {
   // Strategy 1: Exact match
   const exactIndex = content.indexOf(oldText);
@@ -191,7 +191,7 @@ function lineSimilarity(a: string, b: string): number {
  */
 export function findBestLineAlignment(
   content: string,
-  oldText: string
+  oldText: string,
 ): AlignmentResult | null {
   if (!content || !oldText) return null;
 
@@ -257,7 +257,13 @@ export function findBestLineAlignment(
   }
 
   const totalMismatches = oldLines.length - bestScore;
-  const diagnostic = formatDiagnostic(bestStart + 1, mismatches, bestScore, oldLines.length, totalMismatches);
+  const diagnostic = formatDiagnostic(
+    bestStart + 1,
+    mismatches,
+    bestScore,
+    oldLines.length,
+    totalMismatches,
+  );
 
   return {
     startLine: bestStart + 1,
@@ -273,11 +279,11 @@ function formatDiagnostic(
   mismatches: LineMismatch[],
   matchedLines: number,
   totalLines: number,
-  totalMismatches: number
+  totalMismatches: number,
 ): string {
   const lines: string[] = [];
   lines.push(
-    `Closest match at line ${startLine} (${matchedLines}/${totalLines} lines match after quote/whitespace normalization).`
+    `Closest match at line ${startLine} (${matchedLines}/${totalLines} lines match after quote/whitespace normalization).`,
   );
   if (mismatches.length > 0) {
     lines.push("Mismatched lines:");
@@ -300,6 +306,11 @@ export interface SmartEditResult {
   matchType: "exact" | "normalized";
 }
 
+export interface SmartEditBlock {
+  oldText: string;
+  newText: string;
+}
+
 /**
  * Perform the full smart edit: find the matching region in original content,
  * replace those lines with newText.
@@ -310,18 +321,17 @@ export interface SmartEditResult {
 export function smartEdit(
   content: string,
   oldText: string,
-  newText: string
+  newText: string,
 ): SmartEditResult {
   const result = smartFindText(content, oldText);
 
   if (!result.found) {
-    // Check for ambiguous matches explicitly
     const contentNorm = normalizeLines(content);
     const needleNorm = normalizeLines(oldText);
     const matches = findAllLineMatches(contentNorm, needleNorm);
     if (matches.length > 1) {
       throw new Error(
-        `Found ${matches.length} occurrences of the text (after quote/whitespace normalization). Please provide more context to make it unique.`
+        `Found ${matches.length} occurrences of the text (after quote/whitespace normalization). Please provide more context to make it unique.`,
       );
     }
 
@@ -331,7 +341,7 @@ export function smartEdit(
       const secondExact = content.indexOf(oldText, firstExact + oldText.length);
       if (secondExact !== -1) {
         throw new Error(
-          `Found multiple exact occurrences of the text. Please provide more context to make it unique.`
+          `Found multiple exact occurrences of the text. Please provide more context to make it unique.`,
         );
       }
     }
@@ -358,9 +368,66 @@ export function smartEdit(
 
   if (newContent === content) {
     throw new Error(
-      `No changes made. The replacement produced identical content.`
+      `No changes made. The replacement produced identical content.`,
     );
   }
 
   return { newContent, matchType: match.matchType };
+}
+
+export function smartEditMany(
+  content: string,
+  edits: SmartEditBlock[],
+): { newContent: string; matchTypes: Array<"exact" | "normalized"> } {
+  if (!Array.isArray(edits) || edits.length === 0) {
+    throw new Error("edits must contain at least one replacement block.");
+  }
+
+  const matches = edits.map((edit, index) => {
+    if (edit.oldText.length === 0) {
+      throw new Error(`edits[${index}].oldText must not be empty.`);
+    }
+
+    const found = smartFindText(content, edit.oldText);
+    if (!found.found) {
+      throw new Error(`Could not find edits[${index}] in the file.`);
+    }
+
+    return {
+      index,
+      startLine: found.match.startLine,
+      endLine: found.match.endLine,
+      newLines: edit.newText.split("\n"),
+      matchType: found.match.matchType,
+    };
+  });
+
+  const sorted = [...matches].sort((a, b) => a.startLine - b.startLine);
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (prev.endLine >= curr.startLine) {
+      throw new Error(
+        `edits[${prev.index}] and edits[${curr.index}] overlap. Merge them into one edit.`,
+      );
+    }
+  }
+
+  const lines = content.split("\n");
+  for (const match of [...sorted].reverse()) {
+    lines.splice(
+      match.startLine,
+      match.endLine - match.startLine + 1,
+      ...match.newLines,
+    );
+  }
+
+  const newContent = lines.join("\n");
+  if (newContent === content) {
+    throw new Error(
+      "No changes made. The replacements produced identical content.",
+    );
+  }
+
+  return { newContent, matchTypes: matches.map((m) => m.matchType) };
 }
