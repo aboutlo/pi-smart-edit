@@ -147,10 +147,11 @@ export default function (pi: ExtensionAPI) {
     description:
       "Edit a single file with smart matching. Supports one or more targeted replacements in edits[]. Prefer batching disjoint replacements into one call.",
     promptSnippet:
-      "Make precise file edits with smart matching (whitespace/quote tolerant), including multiple disjoint edits in one call",
+      "Make precise file edits with smart matching (whitespace/quote tolerant). For multiple disjoint changes in one file, use one call with edits[].",
     promptGuidelines: [
       "Use this tool for precise text replacements in one file.",
       "When changing multiple locations in the same file, send ONE edit call with multiple entries in edits[].",
+      'Example payload: {"path":"src/file.ts","edits":[{"oldText":"const a = 1;","newText":"const a = 2;"},{"oldText":"return x;","newText":"return y;"}]}',
       "Each edits[].oldText must be unique; include 1-2 surrounding lines if needed to disambiguate.",
       "Keep edits[].oldText as small as possible while still unique.",
     ],
