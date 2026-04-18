@@ -26,12 +26,26 @@ export interface MatchResult {
 /**
  * Normalize a single line for matching purposes:
  * - Trim leading/trailing whitespace
- * - Canonicalize quotes: ' → " (but not inside strings — we do a simple global replace
- *   because for *matching* purposes we just need both sides to look the same)
- * - Collapse runs of whitespace inside the line to single space
+ * - NFKC unicode normalization
+ * - Canonicalize quotes: ' → " and smart quotes → " (covers both local LLM ASCII
+ *   swaps and Unicode curly quotes from web-pasted content)
+ * - Normalize Unicode dashes/hyphens → ASCII hyphen
+ * - Normalize special Unicode spaces → regular space
  */
 export function normalizeLine(line: string): string {
-  return line.trim().replace(/'/g, '"');
+  return (
+    line
+      .trim()
+      .normalize("NFKC")
+      // All quote styles → "
+      .replace(/'/g, '"')
+      .replace(/[\u2018\u2019\u201A\u201B]/g, '"') // smart single quotes
+      .replace(/[\u201C\u201D\u201E\u201F]/g, '"') // smart double quotes
+      // Various dashes → -
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+      // Special spaces → regular space
+      .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ")
+  );
 }
 
 /**

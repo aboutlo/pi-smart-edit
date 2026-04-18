@@ -32,6 +32,21 @@ describe("normalizeLine", () => {
   it("handles tabs", () => {
     assert.equal(normalizeLine("\t\treturn 1;"), "return 1;");
   });
+
+  it("normalizes smart/curly quotes to double quotes", () => {
+    assert.equal(normalizeLine('import x from \u201Cviem\u201D;'), 'import x from "viem";');
+    assert.equal(normalizeLine('import x from \u2018viem\u2019;'), 'import x from "viem";');
+  });
+
+  it("normalizes unicode dashes to ASCII hyphen", () => {
+    assert.equal(normalizeLine("a \u2013 b"), "a - b"); // en-dash
+    assert.equal(normalizeLine("a \u2014 b"), "a - b"); // em-dash
+  });
+
+  it("normalizes special spaces to regular space", () => {
+    assert.equal(normalizeLine("a\u00A0b"), "a b"); // NBSP
+    assert.equal(normalizeLine("a\u2003b"), "a b"); // em space
+  });
 });
 
 // ---------------------------------------------------------------------------
