@@ -311,6 +311,61 @@ export interface SmartEditBlock {
   newText: string;
 }
 
+function countExactOccurrences(content: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let from = 0;
+  while (from <= content.length) {
+    const index = content.indexOf(needle, from);
+    if (index === -1) break;
+    count++;
+    from = index + Math.max(needle.length, 1);
+  }
+  return count;
+}
+
+function describeMultiEditFailure(
+  content: string,
+  edit: SmartEditBlock,
+  index: number,
+): string {
+  const exactCount = countExactOccurrences(content, edit.oldText);
+  if (exactCount > 1) {
+    return (
+      `edits[${index}]: Found ${exactCount} exact occurrences of oldText. ` +
+      `Add 1-2 surrounding lines so the target is unique.`
+    );
+  }
+
+  const contentNorm = normalizeLines(content);
+  const needleNorm = normalizeLines(edit.oldText);
+  const normalizedMatches = findAllLineMatches(contentNorm, needleNorm);
+  if (normalizedMatches.length > 1) {
+    const candidates = normalizedMatches
+      .slice(0, 4)
+      .map((start) => {
+        const end = start + needleNorm.length - 1;
+        return `${start + 1}-${end + 1}`;
+      })
+      .join(", ");
+    return (
+      `edits[${index}]: Found ${normalizedMatches.length} normalized occurrences ` +
+      `(candidate line ranges: ${candidates}). Add more surrounding context to disambiguate.`
+    );
+  }
+
+  const alignment = findBestLineAlignment(content, edit.oldText);
+  const base =
+    `edits[${index}]: Could not find oldText in file, even after quote/whitespace normalization.` +
+    ` The content may be hallucinated or significantly different.`;
+
+  if (alignment) {
+    return `${base}\n${alignment.diagnostic}`;
+  }
+
+  return base;
+}
+
 /**
  * Perform the full smart edit: find the matching region in original content,
  * replace those lines with newText.
@@ -383,24 +438,44 @@ export function smartEditMany(
     throw new Error("edits must contain at least one replacement block.");
   }
 
-  const matches = edits.map((edit, index) => {
+  const failures: string[] = [];
+  const matches: Array<{
+    index: number;
+    startLine: number;
+    endLine: number;
+    newLines: string[];
+    matchType: "exact" | "normalized";
+  }> = [];
+
+  for (const [index, edit] of edits.entries()) {
     if (edit.oldText.length === 0) {
-      throw new Error(`edits[${index}].oldText must not be empty.`);
+      failures.push(`edits[${index}]: oldText must not be empty.`);
+      continue;
     }
 
     const found = smartFindText(content, edit.oldText);
     if (!found.found) {
-      throw new Error(`Could not find edits[${index}] in the file.`);
+      failures.push(describeMultiEditFailure(content, edit, index));
+      continue;
     }
 
-    return {
+    matches.push({
       index,
       startLine: found.match.startLine,
       endLine: found.match.endLine,
       newLines: edit.newText.split("\n"),
       matchType: found.match.matchType,
-    };
-  });
+    });
+  }
+
+  if (failures.length > 0) {
+    const guidance =
+      "Guidance: include enough surrounding lines to uniquely identify each edits[i].oldText. " +
+      "When changing multiple locations in this file, keep using one edit call with multiple edits[] blocks.";
+    throw new Error(
+      `Could not apply ${failures.length} edit block(s).\n\n${failures.join("\n\n")}\n\n${guidance}`,
+    );
+  }
 
   const sorted = [...matches].sort((a, b) => a.startLine - b.startLine);
   for (let i = 1; i < sorted.length; i++) {
@@ -408,7 +483,9 @@ export function smartEditMany(
     const curr = sorted[i];
     if (prev.endLine >= curr.startLine) {
       throw new Error(
-        `edits[${prev.index}] and edits[${curr.index}] overlap. Merge them into one edit.`,
+        `edits[${prev.index}] (${prev.startLine + 1}-${prev.endLine + 1}) and ` +
+          `edits[${curr.index}] (${curr.startLine + 1}-${curr.endLine + 1}) overlap. ` +
+          `Merge them into one edit block.`,
       );
     }
   }

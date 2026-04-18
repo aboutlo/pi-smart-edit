@@ -432,6 +432,47 @@ describe("smartEditMany", () => {
     assert.deepEqual(result.matchTypes, ["normalized", "exact"]);
   });
 
+  it("reports rich diagnostics when one or more edits cannot be found", () => {
+    const content = [
+      "function a() {",
+      "  return 1;",
+      "}",
+      "",
+      "function b() {",
+      "  return 2;",
+      "}",
+    ].join("\n");
+
+    assert.throws(
+      () =>
+        smartEditMany(content, [
+          { oldText: "return 999;", newText: "return 1;" },
+          { oldText: "function c() {\n  return 3;\n}", newText: "" },
+        ]),
+      (err: unknown) => {
+        const msg = (err as Error).message;
+        return (
+          msg.includes("Could not apply 2 edit block(s).") &&
+          msg.includes("edits[0]") &&
+          msg.includes("edits[1]") &&
+          msg.includes("Closest match")
+        );
+      },
+    );
+  });
+
+  it("reports ambiguity for multi-edit matches", () => {
+    const content = ["foo();", "bar();", "foo();"].join("\n");
+    assert.throws(
+      () =>
+        smartEditMany(content, [
+          { oldText: "foo();", newText: "baz();" },
+          { oldText: "bar();", newText: "qux();" },
+        ]),
+      /ambiguous|occurrence|more context/i,
+    );
+  });
+
   it("throws on overlapping edits", () => {
     const content = ["a", "b", "c"].join("\n");
     assert.throws(

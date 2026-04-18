@@ -145,12 +145,13 @@ export default function (pi: ExtensionAPI) {
     name: "edit",
     label: "Smart Edit",
     description:
-      "Edit a single file with smart matching. Supports one or more targeted replacements in edits[].",
+      "Edit a single file with smart matching. Supports one or more targeted replacements in edits[]. Prefer batching disjoint replacements into one call.",
     promptSnippet:
       "Make precise file edits with smart matching (whitespace/quote tolerant), including multiple disjoint edits in one call",
     promptGuidelines: [
       "Use this tool for precise text replacements in one file.",
-      "Prefer one edit call with multiple entries in edits[] when changing multiple locations in the same file.",
+      "When changing multiple locations in the same file, send ONE edit call with multiple entries in edits[].",
+      "Each edits[].oldText must be unique; include 1-2 surrounding lines if needed to disambiguate.",
       "Keep edits[].oldText as small as possible while still unique.",
     ],
     parameters: editSchema,
