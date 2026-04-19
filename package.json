@@ -15,7 +15,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "build": "echo 'no build needed - jiti handles TS'"
+    "build": "echo 'no build needed - jiti handles TS'",
+    "release:patch": "pnpm version patch && pnpm publish && git push --follow-tags",
+    "release:minor": "pnpm version minor && pnpm publish && git push --follow-tags",
+    "release:major": "pnpm version major && pnpm publish && git push --follow-tags"
   },
   "dependencies": {},
   "devDependencies": {
