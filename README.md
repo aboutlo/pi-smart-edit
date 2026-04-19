@@ -1,20 +1,29 @@
 # pi-extension-smart-edit
 
-A [pi](https://github.com/badlogic/pi) extension that overrides the built-in `edit` tool with whitespace-tolerant matching. Designed for local LLMs that struggle with exact indentation.
+A [pi](https://github.com/badlogic/pi) extension that overrides the built-in `edit` tool with whitespace-tolerant matching, designed for local/quantized models.
+
+## TL;DR benchmark claim
+
+On the latest Qwen 3.6 int4 runs (10 vs 10), smart-edit improved **edit success from 46% to 89%** and **task pass from 40% to 80%**.
+
+It also reduced average runtime from **707s to 492s** (**~30% faster**) on that benchmark set.
+
+For Qwen 3.6 nvfp4, the latest patched run improved task pass (10% → 20%) but had slightly lower edit success and slower runtime in this sample (see table).
+
+---
 
 ## Problem
 
-Local/quantized LLMs (e.g., Qwen 3.5 35B-A3B INT4) frequently fail the built-in `edit` tool because they can't reproduce exact whitespace — off-by-one indentation, tabs vs spaces, trailing whitespace. This leads to edit failure spirals: fail → retry → fail again → fall back to full file rewrites (wasting tokens).
+Local LLMs often fail exact-text edits because of tiny formatting drift (indentation, quotes, trailing spaces). This causes retry loops and wasted tokens.
 
 ## Solution
 
-Smart-edit uses a 3-tier matching strategy:
+`smart-edit` keeps `edit` precise, but more tolerant:
 
-1. **Exact match** — same as built-in (fast path)
-2. **Whitespace-normalized match** — strips all leading/trailing whitespace per line, matches on content only
-3. **Prettier-normalized match** — runs prettier on the file, then matches against formatted content
+1. Exact match (same behavior as built-in)
+2. Normalized line match (whitespace/quote tolerant)
 
-After a fuzzy replacement, prettier formats the result to ensure consistent style.
+It supports the current `edit` contract and keeps compatibility with older argument shapes, so resumed sessions continue to work.
 
 ## Install
 
@@ -22,30 +31,29 @@ After a fuzzy replacement, prettier formats the result to ensure consistent styl
 pi install /path/to/pi-extension-smart-edit
 ```
 
-Or for quick testing:
+Or for quick local testing:
 
 ```bash
 pi -e /path/to/pi-extension-smart-edit/src/index.ts
 ```
 
-## Test
+## Usage
 
-```bash
-npm test
-```
+After loading the extension, use `edit` normally in pi. The model/tooling handles the argument shape automatically.
 
-## How it works
+## Benchmark summary
 
-- Overrides the `edit` tool via `pi.registerTool({ name: "edit", ... })`
-- Uses `withFileMutationQueue` for safe concurrent edits
-- Runs prettier via JS API (bundled dependency) — respects project `.prettierrc`
-- Falls back gracefully: unsupported file types use whitespace normalization only
-- Syntax errors in model output fall back to whitespace normalization
+This benchmark runs the same medium coding task 10 times per model, then reports:
 
-## Token savings
+- `edit` success rate,
+- end-to-end task pass rate (typecheck + tests + no timeout),
+- runtime.
 
-| Scenario | Tokens |
-|----------|--------|
-| Successful edit (smart-edit) | ~10-20 |
-| Failed edit + full file rewrite | ~200+ |
-| Failed edit spiral (3 retries) | ~500+ |
+### Results
+
+| Model          | Edit Success (without) | Edit Success (with) | Task Pass (without) | Task Pass (with) | Avg Time (without) | Avg Time (with) |
+| -------------- | ---------------------: | ------------------: | ------------------: | ---------------: | -----------------: | --------------: |
+| Qwen 3.6 int4  |                    46% |                 89% |                 40% |              80% |               707s |            492s |
+| Qwen 3.6 nvfp4 |                    74% |                 72% |                 10% |              20% |               706s |            839s |
+
+...
