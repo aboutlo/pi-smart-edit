@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-smart-edit",
+  "name": "@aboutlo/pi-smart-edit",
   "version": "0.1.0",
   "type": "module",
   "keywords": [
@@ -30,5 +30,8 @@
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@sinclair/typebox": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
