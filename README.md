@@ -32,7 +32,13 @@ It supports the current `edit` contract and keeps compatibility with older argum
 ## Install
 
 ```bash
-pi install /path/to/pi-extension-smart-edit
+# npm
+pi install npm:@aboutlo/pi-smart-edit
+pi install npm:@aboutlo/pi-smart-edit@0.4.0 # pinned version
+
+# git
+pi install git:github.com/aboutlo/pi-extension-smart-edit
+pi install git:github.com/aboutlo/pi-extension-smart-edit@v0.4.0 # tag or commit
 ```
 
 Or for quick local testing:
