@@ -69,3 +69,41 @@ This benchmark runs the same medium coding task 10 times per model, then reports
 | Qwen 3.6 nvfp4 |                    74% |                 72% |                 10% |              20% |               706s |            839s |
 
 - Benchmark code isn't shared. I may do it later once I open source the other repo that I'm developing with only local LLMs
+
+### Tips
+Int4 models are not always available but you can encode one on your mac following the below steps
+
+- `huggingface-cli download Qwen/Qwen3.6-27B`
+- `vi ~/my/path/Modelfile-Qwen3.6-27B-coding` or `vi ~/my/path/Modelfile-Qwen3.6-27B-general`
+### for coding
+```
+FROM /Users/[USER]/.cache/huggingface/hub/models--Qwen--Qwen3.6-35B-A3B/snapshots/7da1103448ba36029c34ce1a9a741dfe93ee0c50 # TODO CHANGE THE HASH
+RENDERER qwen3.5
+PARSER qwen3.5
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.15
+PARAMETER top_k 40
+PARAMETER top_p 0.92
+PARAMETER min_p 0.03
+PARAMETER repeat_penalty 1.08
+PARAMETER repeat_last_n 256
+PARAMETER presence_penalty 0 or for general
+```
+
+### for general purpose tasks 
+```
+FROM /Users/[USER]/.cache/huggingface/hub/models--Qwen--Qwen3.6-35B-A3B/snapshots/7da1103448ba36029c34ce1a9a741dfe93ee0c50 # TODO CHANGE THE HASH
+RENDERER qwen3.5
+PARSER qwen3.5
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.6
+PARAMETER top_k 20
+PARAMETER top_p 0.95
+PARAMETER min_p 0
+PARAMETER repeat_penalty 1
+PARAMETER presence_penalty 03- ollama create --experimental -q int4 aboutlo/qwen3.6-27B-int4 -f ~/Desktop/Modelfile-Qwen-3.6-27B-general
+```
+
+- `ollama create --experimental -q int4 aboutlo/qwen3.6-27B-int4 -f ~/Desktop/Modelfile-Qwen-3.6-27B-general`
+
+Enjoy :)
